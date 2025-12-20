@@ -7,7 +7,7 @@ logger = getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # This is backend/
 
-yes = load_dotenv(BASE_DIR)
+yes = load_dotenv(f"{BASE_DIR}/.env")
 if (not yes):
     logger.warning(f"Failed to load .env in settings.py. BASE_DIR: {BASE_DIR}")
 
@@ -62,11 +62,11 @@ WSGI_APPLICATION = 'photo_backend.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "app_db",
-        "USER": "app_user",
-        "PASSWORD": "app_pwd",
-        "HOST": "127.0.0.1",
-        "PORT": "5432",
+        "NAME": os.getenv("DB_NAME", "app_db"),
+        "USER": os.getenv("DB_USER", "app_user"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "mypwd"),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
 
