@@ -3,15 +3,20 @@ from PIL import Image
 import io
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from typing import Union
+import logging
 from logging import getLogger
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer
 from deepface import DeepFace
+import uvicorn
 
 MID = "apple/FastVLM-0.5B"
 IMAGE_TOKEN_INDEX = -200  # what the model code looks for
 
+logging.basicConfig(level=logging.DEBUG,
+                    format="%(asctime)s | %(levelname)-8s | "
+                           "%(module)s:%(funcName)s:%(lineno)d - %(message)s")
 logger = getLogger(__name__)
 
 
@@ -130,16 +135,16 @@ app.add_middleware(CORSMiddleware,
 @app.post("/ml/text-embed/{text}")
 def textEmbedder(text: str):
     logger.info(f"Starting embedding for text: {text}")
-
+    logger.debug(f"embed_attrs: {embed_attrs}")
     model: SentenceTransformer = embed_attrs["model"]
 
     sentences = [f'clustering: {text}']
     embeddings = model.encode(sentences)
 
     logger.debug(f"Shape of embeddings: {embeddings.shape}")
-    text_embed = embeddings[0]
+    text_embed = embeddings[0].tolist()
 
-    return {"text_embedding": text_embed}
+    return {"text": text, "embedding": text_embed}
 
 
 @app.post("/ml/image-caption/{img}")
