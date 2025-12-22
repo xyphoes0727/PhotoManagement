@@ -113,7 +113,11 @@ def getEmbedder():
     }
 
 
-embedder_attrs = getEmbedder()
+embed_attrs = {}
+try:
+    embed_attrs = getEmbedder()
+except Exception as e:
+    logger.error(f"Error while getEmbedder: {e}")
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware,
@@ -127,7 +131,7 @@ app.add_middleware(CORSMiddleware,
 def textEmbedder(text: str):
     logger.info(f"Starting embedding for text: {text}")
 
-    model: SentenceTransformer = embedder_attrs["model"]
+    model: SentenceTransformer = embed_attrs["model"]
 
     sentences = [f'clustering: {text}']
     embeddings = model.encode(sentences)
@@ -157,4 +161,10 @@ async def imageCaptioner(file: UploadFile):
 @app.post("/ml/face-detection/{img}")
 async def faceDetection(file: UploadFile):
     imgBytes = await file.read()
-    img = Image.open(io.BytesIO(imgBytes)).convert("RGB")
+    # Embed is 512 dims
+    embeds = DeepFace.represent(io.BytesIO(imgBytes), model_name="Facenet512")
+    embed = embeds[0]["embedding"]  # type: ignore
+
+    return {
+        "face_embed": embed
+    }
