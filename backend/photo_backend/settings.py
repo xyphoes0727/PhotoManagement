@@ -15,7 +15,12 @@ SECRET_KEY = os.getenv("DJANGO_SECRET", "your-django-secret")
 
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
+CORS_ORIGIN_ALLOW_ALL = True
 
+CSRF_TRUSTED_ORIGINS = [
+    "http://127.0.0.1:9000",
+    "http://127.0.0.1:8000"
+]
 
 # Application definition
 
@@ -57,7 +62,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'photo_backend.wsgi.application'
 
-
 # Database
 DATABASES = {
     "default": {
@@ -86,7 +90,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'
@@ -94,7 +97,6 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 

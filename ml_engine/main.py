@@ -1,30 +1,45 @@
+import base64
 import torch
 from PIL import Image
+from fastapi import FastAPI
 import io
+from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from typing import Union
 import logging
 from logging import getLogger
-from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer
 from deepface import DeepFace
-import uvicorn
+import constants
+from dotenv import load_dotenv
+from pathlib import Path
 
-MID = "apple/FastVLM-0.5B"
-IMAGE_TOKEN_INDEX = -200  # what the model code looks for
+MID = constants.MID
+IMAGE_TOKEN_INDEX = constants.IMAGE_TOKEN_INDEX  # what the model code looks for
+APPLE_REV = constants.APPLE_REV
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s | %(levelname)-8s | "
                            "%(module)s:%(funcName)s:%(lineno)d - %(message)s")
 logger = getLogger(__name__)
 
+BASE_DIR = Path(__file__).resolve().parent  # This is ml_engine/
+yes = load_dotenv(f"{BASE_DIR}/.env")
+if (not yes):
+    logger.warning(f"Failed to load .env in settings.py. BASE_DIR: {BASE_DIR}")
+
 
 def getTokenizer():
-    tok = AutoTokenizer.from_pretrained(MID, trust_remote_code=True)
+    tok = AutoTokenizer.from_pretrained(
+        MID, trust_remote_code=True, revision=APPLE_REV)
     messages = [
-        {"role": "user", "content": "<image>\nDescribe this image in detail."}
+        {
+            "role": "user",
+            "content": "<image>\nOne-sentence description of only what is visibly present at a scene level. No interpretation."
+
+        }
     ]
+
     rendered = tok.apply_chat_template(
         messages, add_generation_prompt=True, tokenize=False
     )
@@ -58,6 +73,7 @@ def getVLM(tok_attrs: dict):
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         device_map="auto",
         trust_remote_code=True,
+        revision=APPLE_REV
     )
 
     input_ids = torch.cat([pre_ids, img_tok, post_ids], dim=1).to(model.device)
@@ -109,9 +125,13 @@ def inferVLM(tok_attrs: dict, vlm_attrs: dict, image: Image.Image) -> str:
     return description
 
 
+NOMIC_REV = "e5cf08aadaa33385f5990def41f7a23405aec398"
+
+
 def getEmbedder():
     model = SentenceTransformer(
-        "nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
+        "nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True,
+        revision=NOMIC_REV)
 
     return {
         "model": model
@@ -144,12 +164,26 @@ def textEmbedder(text: str):
     logger.debug(f"Shape of embeddings: {embeddings.shape}")
     text_embed = embeddings[0].tolist()
 
-    return {"text": text, "embedding": text_embed}
+    return {
+        "text": text,
+        "embed": text_embed
+    }
 
 
-@app.post("/ml/image-caption/{img}")
-async def imageCaptioner(file: UploadFile):
-    imgBytes = await file.read()
+class ImageData(BaseModel):
+    image_id: str
+    image: str
+
+
+@app.post("/ml/image-caption/")
+async def imageCaptioner(image_data: ImageData):
+    logger.debug(f"image_id: {image_data.image_id}")
+    logger.debug(f"Type of image: {type(image_data.image)}")
+
+    file_b64 = image_data.image
+    imgBytes = base64.b64decode(s=file_b64)
+
+    logger.debug(f"Image bytes: {imgBytes[:10]}")
     img = Image.open(io.BytesIO(imgBytes)).convert("RGB")
 
     caption = ""
@@ -163,13 +197,23 @@ async def imageCaptioner(file: UploadFile):
     }
 
 
-@app.post("/ml/face-detection/{img}")
-async def faceDetection(file: UploadFile):
-    imgBytes = await file.read()
+@app.post("/ml/face-detection/")
+async def faceDetection(image_data: ImageData):
+    file_b64 = image_data.image
+    imgBytes = base64.b64decode(s=file_b64)
+
+    logger.debug(f"Image bytes: {imgBytes[:10]}")
+    # img = Image.open(io.BytesIO(imgBytes)).convert("RGB")
+
     # Embed is 512 dims
     embeds = DeepFace.represent(io.BytesIO(imgBytes), model_name="Facenet512")
-    embed = embeds[0]["embedding"]  # type: ignore
+    logger.debug(f"Keys of one embeds object: {embeds[0].keys()}")
+
+    face_embeddings = []
+    for emb in embeds:
+        embed = emb["embedding"]  # type: ignore
+        face_embeddings.append(embed)
 
     return {
-        "face_embed": embed
+        "face_embeds": face_embeddings
     }
