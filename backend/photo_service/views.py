@@ -1,4 +1,4 @@
-from photo_service.proc_services import captioning, face_detection, embedding
+from photo_service.proc_services import captioning, face_detection, embedding, albumization
 from django.http import HttpResponse
 from django.views.generic import View
 import backend.constants as constants
@@ -119,6 +119,31 @@ class FaceDetectionView(View):
         return HttpResponse(face_res, status=200)
 
 
+class AlbumizationView(View):
+    def post(self, request):
+        body_dec = self.request.body.decode()
+        body = json.loads(body_dec)
+
+        image_caption = body.get("image_caption")
+        image_caption = image_caption if image_caption else ""
+        if (image_caption == ""):
+            logger.warning(f"No Query received.")
+            return HttpResponse({
+                "query": image_caption,
+                "error": "No Query Received"
+            }, status=500)
+
+        logger.info(f"Query recieved: {image_caption}")
+
+        albumization_resp = albumization.albumize_image(image_caption)
+        logger.debug(f"Albumization Response: {albumization_resp}")
+
+        albumization_json = json.dumps(albumization_resp)
+
+        return HttpResponse(albumization_json, status=200)
+
+
+# TODO: ADD ALBUMIZATION HERE
 class ImageUploadView(View):
     def post(self, request):
         image_id = self.request.POST.get("image_id")
@@ -142,14 +167,14 @@ class ImageUploadView(View):
         if ("error" in caption):
             resp = json.dumps(caption)
             return HttpResponse(resp, status=500)
-        caption_text = caption.get("caption")
+        caption_text = caption.get("caption", "")
 
         embedding_res = embedding.text_embedder(caption_text)
         if ("error" in embedding_res):
             resp = json.dumps(embedding_res)
             return HttpResponse(resp, status=500)
 
-        text_embed = embedding_res.get("embed")
+        text_embed = embedding_res.get("embed", [])
         try:
             pinecone_helper._upsert_to_pinecone(
                 image_index, image_id, text_embed)
@@ -160,10 +185,11 @@ class ImageUploadView(View):
         if ("error" in face_res):
             resp = json.dumps(face_res)
             return HttpResponse(resp, status=500)
-        face_embeds = face_res.get("face_embeds")
+        face_embeds = face_res.get("face_embeds", [])
 
         has_new_face = False
         try:
+            logger.debug(f"Len of face embeds: {len(face_embeds)}")
             has_new_face = pinecone_helper._match_face_embeds(
                 face_index, face_embeds)
         except Exception as e:
@@ -176,23 +202,3 @@ class ImageUploadView(View):
             "has_new_face": has_new_face
         })
         return HttpResponse(image_resp, status=200)
-
-
-class AlbumizationView(View):
-    def post(self, request):
-        image_id = self.request.POST.get("image_id")
-        if (not image_id):
-            resp = json.dumps({
-                "error": "No Image ID recieved"
-            })
-            return HttpResponse(resp, status=400)
-
-        image = self.request.FILES.get("image")
-        if (not image):
-            resp = json.dumps({
-                "error": "no Image recieved"
-            })
-            return HttpResponse(resp, status=400)
-        logger.debug(f"Image ID: {image_id} Image: {image}")
-
-        image_bytes = image.read()

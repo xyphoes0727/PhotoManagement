@@ -26,6 +26,6 @@ def text_embedder(text: str) -> dict[str, Any]:
         }
 
     res = resp.json()
-    logger.debug(f"Embedding Res: {res}")
+    # logger.debug(f"Embedding Res: {res}")
 
     return res

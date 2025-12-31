@@ -13,21 +13,19 @@ BASE_ML_URL = constants.BASE_ML_URL
 ALBUM_EP = constants.ALBUM_EP  # POST, {img}
 
 
-def albumize_image(image_bytes: Any, image_id: str):
-    image_enc = base64.b64encode(image_bytes).decode("ascii")
+# TODO: upsert album references to postgres
+def albumize_image(image_caption: str):
 
     logger.info(f"Sending POST req. to ML Engine for albumization.")
+
     resp = None
     try:
-        resp = requests.post(f"{BASE_ML_URL}/{ALBUM_EP}/", json={
-            "image_id": image_id,
-            "image": image_enc
-        })
+        resp = requests.post(f"{BASE_ML_URL}/{ALBUM_EP}/{image_caption}")
 
     except Exception as e:
         logger.error(f"Error while POST req to {ALBUM_EP}: {e}")
         return {
-            "image_id": image_id,
+            "image_caption": image_caption,
             "error": f"Error while POST req to {ALBUM_EP}: {e}"
         }
 

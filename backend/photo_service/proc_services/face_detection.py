@@ -32,5 +32,5 @@ def face_detector(image_bytes: bytes, image_id: str) -> dict[str, Any]:
         }
     res = resp.json()
 
-    logger.info(f"Face Detector Res: {res}")
+    # logger.info(f"Face Detector Res: {res}")
     return res

@@ -1,7 +1,10 @@
+import os
+from openai import OpenAI
 import base64
 import torch
 from PIL import Image
 from fastapi import FastAPI
+import json
 import io
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -18,6 +21,11 @@ MID = constants.MID
 IMAGE_TOKEN_INDEX = constants.IMAGE_TOKEN_INDEX  # what the model code looks for
 APPLE_REV = constants.APPLE_REV
 
+NOMIC_REV = constants.NOMIC_REV
+NOMIC_MODEL_NAME = constants.NOMIC_MODEL_NAME
+
+OPENAI_MODEL = constants.OPENAI_MODEL
+
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s | %(levelname)-8s | "
                            "%(module)s:%(funcName)s:%(lineno)d - %(message)s")
@@ -27,6 +35,12 @@ BASE_DIR = Path(__file__).resolve().parent  # This is ml_engine/
 yes = load_dotenv(f"{BASE_DIR}/.env")
 if (not yes):
     logger.warning(f"Failed to load .env in settings.py. BASE_DIR: {BASE_DIR}")
+
+try:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "openai_api_key")
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+except Exception as e:
+    logger.error(f"Failed to load OpenAI Client:: {e}")
 
 
 def getTokenizer():
@@ -125,12 +139,10 @@ def inferVLM(tok_attrs: dict, vlm_attrs: dict, image: Image.Image) -> str:
     return description
 
 
-NOMIC_REV = "e5cf08aadaa33385f5990def41f7a23405aec398"
-
-
 def getEmbedder():
     model = SentenceTransformer(
-        "nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True,
+        NOMIC_MODEL_NAME,
+        trust_remote_code=True,
         revision=NOMIC_REV)
 
     return {
@@ -177,7 +189,7 @@ class ImageData(BaseModel):
 
 @app.post("/ml/image-caption/")
 async def imageCaptioner(image_data: ImageData):
-    logger.debug(f"image_id: {image_data.image_id}")
+    logger.info(f"image_id: {image_data.image_id}")
     logger.debug(f"Type of image: {type(image_data.image)}")
 
     file_b64 = image_data.image
@@ -203,7 +215,6 @@ async def faceDetection(image_data: ImageData):
     imgBytes = base64.b64decode(s=file_b64)
 
     logger.debug(f"Image bytes: {imgBytes[:10]}")
-    # img = Image.open(io.BytesIO(imgBytes)).convert("RGB")
 
     # Embed is 512 dims
     embeds = DeepFace.represent(io.BytesIO(imgBytes), model_name="Facenet512")
@@ -217,3 +228,41 @@ async def faceDetection(image_data: ImageData):
     return {
         "face_embeds": face_embeddings
     }
+
+
+@app.post("/ml/albumization/{image_caption}")
+async def albumizeImage(image_caption: str):
+    logger.info(f"image_caption received: {image_caption}")
+
+    response = openai_client.responses.create(
+        model=OPENAI_MODEL,
+        input=f"""
+            You are given a short image caption.
+
+            Task:
+            - Generate high-level album tags for photo organization using ONLY the information in the caption.
+            - Tags should be generic categories useful for grouping similar photos.
+            - Do NOT add information not present in the caption.
+            - Do NOT infer intent, emotions, meaning, or personal attributes.
+            - Use short, lowercase, noun-based tags.
+
+            Output rules:
+            - Return ONLY valid JSON.
+            - No explanations, no markdown, no extra text.
+
+            Output JSON schema:
+            {{
+            "tags": ["tag1", "tag2", "tag3"]
+            }}
+
+            Image Caption:
+            "{image_caption}"
+            """
+    )
+
+    output_text = response.output_text
+    resp_json = json.loads(output_text)
+
+    logger.info(f"Output JSON for album tags: {resp_json}")
+
+    return resp_json

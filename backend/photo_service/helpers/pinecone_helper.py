@@ -25,6 +25,16 @@ def _match_face_embeds(face_index, face_embeds: list[list[float]]):
 
         query_resp = face_index.query(top_k=1, vector=emb)
         vecs = query_resp.matches  # type: ignore
+        logger.debug(f"Vecs is: {vecs}")
+
+        if (vecs == []):
+            has_new_face = True
+            face_id = str(random.randint(1000, 100000))
+            logger.info(f"Upserting new Face with ID: {face_id}")
+            _upsert_to_pinecone(face_index, face_id, emb)
+
+            continue
+
         vec = vecs[0]
 
         score = vec.get("score")
