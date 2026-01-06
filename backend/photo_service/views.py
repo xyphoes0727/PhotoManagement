@@ -1,7 +1,7 @@
 from photo_service.proc_services import captioning, face_detection, embedding, albumization
 from django.http import HttpResponse
 from django.views.generic import View
-import backend.constants as constants
+import constants
 import json
 from pinecone import Pinecone
 import os
@@ -41,7 +41,6 @@ class QueryView(View):
     def post(self, request):
         body_dec = self.request.body.decode()
         body = json.loads(body_dec)
-
         query = body.get("query")
         query = query if query else ""
         if (query == ""):
@@ -57,8 +56,12 @@ class QueryView(View):
         if ("error" in query_result):
             resp = json.dumps(query_result)
             return HttpResponse(resp, status=500)
+        query_embedding = query_result.get("embed")
 
-        query_result = json.dumps(query_result)
+        matched_ids = pinecone_helper._match_query(
+            image_index, query_embedding)
+
+        query_result = json.dumps(matched_ids)
         return HttpResponse(
             query_result, status=200)
 
@@ -162,7 +165,7 @@ class ImageUploadView(View):
         logger.debug(f"Image ID: {image_id} Image: {image}")
 
         image_bytes = image.read()
-
+        logger.debug(f"len of image_bytes: {len(image_bytes)}")
         caption = captioning.caption_image(image_bytes, image_id)
         if ("error" in caption):
             resp = json.dumps(caption)

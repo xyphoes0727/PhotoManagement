@@ -217,13 +217,16 @@ async def faceDetection(image_data: ImageData):
     logger.debug(f"Image bytes: {imgBytes[:10]}")
 
     # Embed is 512 dims
-    embeds = DeepFace.represent(io.BytesIO(imgBytes), model_name="Facenet512")
-    logger.debug(f"Keys of one embeds object: {embeds[0].keys()}")
-
     face_embeddings = []
-    for emb in embeds:
-        embed = emb["embedding"]  # type: ignore
-        face_embeddings.append(embed)
+    try:
+        embeds = DeepFace.represent(io.BytesIO(
+            imgBytes), model_name="Facenet512", enforce_detection=True)
+        logger.debug(f"Keys of one embeds object: {embeds[0].keys()}")
+        for emb in embeds:
+            embed = emb["embedding"]  # type: ignore
+            face_embeddings.append(embed)
+    except ValueError:
+        logger.info(f"No face detected in image.")
 
     return {
         "face_embeds": face_embeddings

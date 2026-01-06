@@ -1,6 +1,6 @@
 from typing import Any
 import base64
-import backend.constants as constants
+import constants
 import requests
 import logging
 
@@ -30,6 +30,7 @@ def face_detector(image_bytes: bytes, image_id: str) -> dict[str, Any]:
             "image_id": image_id,
             "error": f"Error while POST req to {FACE_EP}: {e}"
         }
+    
     res = resp.json()
 
     # logger.info(f"Face Detector Res: {res}")

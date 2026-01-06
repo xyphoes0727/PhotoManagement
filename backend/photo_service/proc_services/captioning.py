@@ -1,7 +1,7 @@
 from typing import Any
 import base64
 import requests
-import backend.constants as constants
+import constants
 import logging
 
 logging.basicConfig(level=logging.DEBUG,

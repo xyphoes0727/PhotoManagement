@@ -1,8 +1,9 @@
+from typing import Any
 import random
 from pinecone import Vector
 from logging import getLogger
 import logging
-from backend import constants
+import constants
 logging.basicConfig(level=logging.DEBUG,
                     format="%(asctime)s | %(levelname)-8s | "
                            "%(module)s:%(funcName)s:%(lineno)d - %(message)s")
@@ -16,6 +17,23 @@ def _upsert_to_pinecone(index, id: str, vector: list[float]):
     index.upsert(vectors=[
         vec
     ])
+
+
+def _match_query(image_index, query_embed: list[float]) -> list[dict]:
+    query_res = image_index.query(top_k=5, vector=query_embed)
+    matches = query_res.matches
+    logger.debug(f"Query Matches are: {matches}")
+    if (matches == []):
+        logger.info(f"Matches is empty. No such image found.")
+        return []
+    matched_ids = []
+    for match in matches:
+        match_details = {
+            "id": match.get("id"),
+            "score": match.get("score")
+        }
+        matched_ids.append(match_details)
+    return matched_ids
 
 
 def _match_face_embeds(face_index, face_embeds: list[list[float]]):

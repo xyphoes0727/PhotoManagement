@@ -1,6 +1,6 @@
 from typing import Any
 import requests
-import backend.constants as constants
+import constants
 import logging
 
 logging.basicConfig(level=logging.DEBUG,
