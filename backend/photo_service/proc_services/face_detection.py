@@ -3,6 +3,7 @@ import base64
 import constants
 import requests
 import logging
+from photo_service.schema import FaceDetectionResponse
 
 logging.basicConfig(level=logging.DEBUG,
                     format="%(asctime)s | %(levelname)-8s | "
@@ -13,7 +14,7 @@ BASE_ML_URL = constants.BASE_ML_URL
 FACE_EP = constants.FACE_EP  # POST, {img}
 
 
-def face_detector(image_bytes: bytes, image_id: str) -> dict[str, Any]:
+def face_detector(image_bytes: bytes, image_id: str) -> FaceDetectionResponse:
     image_enc = base64.b64encode(image_bytes).decode("ascii")
 
     logger.info(f"Sending POST req. to ML Engine for face detection.")
@@ -26,12 +27,11 @@ def face_detector(image_bytes: bytes, image_id: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Error while POST req to {FACE_EP}: {e}")
-        return {
+        return FaceDetectionResponse.from_proc_dict({
             "image_id": image_id,
             "error": f"Error while POST req to {FACE_EP}: {e}"
-        }
-    
-    res = resp.json()
+        })
 
-    # logger.info(f"Face Detector Res: {res}")
-    return res
+    res = resp.json()
+    face_resp = FaceDetectionResponse.from_proc_dict(res)
+    return face_resp

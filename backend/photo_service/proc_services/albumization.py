@@ -3,6 +3,7 @@ import base64
 import requests
 import constants
 import logging
+from photo_service.schema import AlbumizationResponse
 
 logging.basicConfig(level=logging.DEBUG,
                     format="%(asctime)s | %(levelname)-8s | "
@@ -14,7 +15,7 @@ ALBUM_EP = constants.ALBUM_EP  # POST, {img}
 
 
 # TODO: upsert album references to postgres
-def albumize_image(image_caption: str):
+def albumize_image(image_caption: str) -> AlbumizationResponse:
 
     logger.info(f"Sending POST req. to ML Engine for albumization.")
 
@@ -24,10 +25,11 @@ def albumize_image(image_caption: str):
 
     except Exception as e:
         logger.error(f"Error while POST req to {ALBUM_EP}: {e}")
-        return {
+        return AlbumizationResponse.from_proc_dict({
             "image_caption": image_caption,
             "error": f"Error while POST req to {ALBUM_EP}: {e}"
-        }
+        })
 
     res = resp.json()
-    return res
+    album_resp = AlbumizationResponse.from_proc_dict(res)
+    return album_resp

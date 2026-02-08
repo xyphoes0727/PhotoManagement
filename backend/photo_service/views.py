@@ -1,3 +1,5 @@
+from photo_service.schema import QueryRequest, ImageFileRequest, AlbumizationRequest
+from photo_service.schema import CaptionResponse, AlbumizationResponse, FaceDetectionResponse, TextEmbeddingResponse
 from photo_service.proc_services import captioning, face_detection, embedding, albumization
 from django.http import HttpResponse
 from django.views.generic import View
@@ -14,7 +16,6 @@ logging.basicConfig(level=logging.DEBUG,
                     format="%(asctime)s | %(levelname)-8s | "
                            "%(module)s:%(funcName)s:%(lineno)d - %(message)s")
 logger = logging.getLogger(__name__)
-
 BASE_DIR = Path(__file__).resolve().parent.parent  # This is backend/
 yes = load_dotenv(f"{BASE_DIR}/.env")
 if (not yes):
@@ -39,10 +40,13 @@ face_index = pc.Index(host=PINECONE_FACE_INDEX_HOST)
 
 class QueryView(View):
     def post(self, request):
-        body_dec = self.request.body.decode()
-        body = json.loads(body_dec)
-        query = body.get("query")
-        query = query if query else ""
+        query = ""
+        try:
+            query_req = QueryRequest.from_django_json(self.request)
+            query = query_req.query
+        except Exception as e:
+            logger.error(f"Error while parsing Query Request: {e}")
+
         if (query == ""):
             logger.warning(f"No Query received.")
             return HttpResponse({
@@ -68,24 +72,18 @@ class QueryView(View):
 
 class ImageCaptionView(View):
     def post(self, request):
-        image_id = self.request.POST.get("image_id")
-        if (not image_id):
-            resp = json.dumps({
-                "error": "No Image ID recieved"
-            })
-            return HttpResponse(resp, status=400)
+        image = None
+        image_id = ""
+        try:
+            image_req = ImageFileRequest.from_django(self.request)
+            image = image_req.image
+            image_id = image_req.image_id
+        except Exception as e:
+            logger.error(f"Error while parsing Query Request: {e}")
 
-        image = self.request.FILES.get("image")
-        if (not image):
-            resp = json.dumps({
-                "error": "no Image recieved"
-            })
-            return HttpResponse(resp, status=400)
+        caption = captioning.caption_image(image, image_id)
 
-        image_bytes = image.read()
-
-        caption = captioning.caption_image(image_bytes, image_id)
-        if ("error" in caption):
+        if (caption.error):
             resp = json.dumps(caption)
             return HttpResponse(resp, status=500)
         logger.debug(f"Caption: {caption}")
@@ -97,24 +95,17 @@ class ImageCaptionView(View):
 
 class FaceDetectionView(View):
     def post(self, request):
-        image_id = self.request.POST.get("image_id")
-        if (not image_id):
-            resp = json.dumps({
-                "error": "No Image ID recieved"
-            })
-            return HttpResponse(resp, status=400)
+        image = None
+        image_id = ""
+        try:
+            image_req = ImageFileRequest.from_django(self.request)
+            image = image_req.image
+            image_id = image_req.image_id
+        except Exception as e:
+            logger.error(f"Error while parsing Query Request: {e}")
 
-        image = self.request.FILES.get("image")
-        if (not image):
-            resp = json.dumps({
-                "error": "no Image recieved"
-            })
-            return HttpResponse(resp, status=400)
-
-        image_bytes = image.read()
-
-        face_res = face_detection.face_detector(image_bytes, image_id)
-        if ("error" in face_res):
+        face_res = face_detection.face_detector(image, image_id)
+        if (face_res.error):
             resp = json.dumps(face_res)
             return HttpResponse(resp, status=500)
 
@@ -124,19 +115,21 @@ class FaceDetectionView(View):
 
 class AlbumizationView(View):
     def post(self, request):
-        body_dec = self.request.body.decode()
-        body = json.loads(body_dec)
+        image_caption = ""
+        try:
+            album_req = AlbumizationRequest.from_django_json(self.request)
+            image_caption = album_req.image_caption
+        except Exception as e:
+            logger.error(f"Error while parsing Albumization Request: {e}")
 
-        image_caption = body.get("image_caption")
-        image_caption = image_caption if image_caption else ""
         if (image_caption == ""):
             logger.warning(f"No Query received.")
             return HttpResponse({
-                "query": image_caption,
-                "error": "No Query Received"
+                "image_caption": image_caption,
+                "error": "No Caption Received"
             }, status=500)
 
-        logger.info(f"Query recieved: {image_caption}")
+        logger.info(f"Caption recieved: {image_caption}")
 
         albumization_resp = albumization.albumize_image(image_caption)
         logger.debug(f"Albumization Response: {albumization_resp}")
@@ -149,28 +142,21 @@ class AlbumizationView(View):
 # TODO: ADD ALBUMIZATION HERE
 class ImageUploadView(View):
     def post(self, request):
-        image_id = self.request.POST.get("image_id")
-        if (not image_id):
-            resp = json.dumps({
-                "error": "No Image ID recieved"
-            })
-            return HttpResponse(resp, status=400)
+        image = None
+        image_id = ''
+        try:
+            image_req = ImageFileRequest.from_django(self.request)
+            image = image_req.image
+            image_id = image_req.image_id
+        except Exception as e:
+            logger.error(f"Error while parsing Query Request: {e}")
 
-        image = self.request.FILES.get("image")
-        if (not image):
-            resp = json.dumps({
-                "error": "no Image recieved"
-            })
-            return HttpResponse(resp, status=400)
-        logger.debug(f"Image ID: {image_id} Image: {image}")
-
-        image_bytes = image.read()
-        logger.debug(f"len of image_bytes: {len(image_bytes)}")
-        caption = captioning.caption_image(image_bytes, image_id)
-        if ("error" in caption):
+        caption = captioning.caption_image(image, image_id)
+        if (caption.error):
             resp = json.dumps(caption)
             return HttpResponse(resp, status=500)
-        caption_text = caption.get("caption", "")
+        caption_text = caption.caption
+        caption_text = caption_text if caption_text else ""
 
         embedding_res = embedding.text_embedder(caption_text)
         if ("error" in embedding_res):
@@ -184,11 +170,11 @@ class ImageUploadView(View):
         except Exception as e:
             logger.error(f"Failed to upsert image embed: {e}")
 
-        face_res = face_detection.face_detector(image_bytes, image_id)
-        if ("error" in face_res):
+        face_res = face_detection.face_detector(image, image_id)
+        if (face_res.error):
             resp = json.dumps(face_res)
             return HttpResponse(resp, status=500)
-        face_embeds = face_res.get("face_embeds", [])
+        face_embeds = face_res.face_embeds
 
         has_new_face = False
         try:
@@ -205,3 +191,7 @@ class ImageUploadView(View):
             "has_new_face": has_new_face
         })
         return HttpResponse(image_resp, status=200)
+
+class ListPhotos(View):
+    def get(self, request):
+        

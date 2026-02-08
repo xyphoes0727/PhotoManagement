@@ -3,6 +3,7 @@ import base64
 import requests
 import constants
 import logging
+from photo_service.schema import CaptionResponse
 
 logging.basicConfig(level=logging.DEBUG,
                     format="%(asctime)s | %(levelname)-8s | "
@@ -13,7 +14,7 @@ BASE_ML_URL = constants.BASE_ML_URL
 IMAGE_EP = constants.IMAGE_EP  # POST, {img}
 
 
-def caption_image(image_bytes: Any, image_id: str) -> dict[str, str]:
+def caption_image(image_bytes: Any, image_id: str) -> CaptionResponse:
 
     image_enc = base64.b64encode(image_bytes).decode("ascii")
 
@@ -27,11 +28,13 @@ def caption_image(image_bytes: Any, image_id: str) -> dict[str, str]:
 
     except Exception as e:
         logger.error(f"Error while POST req to {IMAGE_EP}: {e}")
-        return {
+        capt_resp = CaptionResponse.from_proc_dict({
             "image_id": image_id,
             "error": f"Error while POST req to {IMAGE_EP}: {e}"
-        }
+        })
+        return capt_resp
 
     res = resp.json()
+    capt_resp = CaptionResponse.from_proc_dict(res)
 
-    return res
+    return capt_resp

@@ -49,7 +49,7 @@ def getTokenizer():
     messages = [
         {
             "role": "user",
-            "content": "<image>\nOne-sentence description of only what is visibly present at a scene level. No interpretation."
+            "content": "<image> You must output exactly one single-line sentence describing the image.The output must contain no line breaks, no labels, no prefixes, no quotes, no markdown, and no extra words.Do not include words like Answer, Caption, Description, or Explanation.Do not repeat the sentence.Use simple English and describe only visible people, objects, and actions.End the sentence with a period.Output only the sentence."
 
         }
     ]
@@ -205,6 +205,7 @@ async def imageCaptioner(image_data: ImageData):
         logger.error(f"Failed while captioning: {e}")
 
     return {
+        "image_id": image_data.image_id,
         "caption": caption
     }
 
@@ -229,6 +230,7 @@ async def faceDetection(image_data: ImageData):
         logger.info(f"No face detected in image.")
 
     return {
+        "image_id": image_data.image_id,
         "face_embeds": face_embeddings
     }
 
@@ -264,8 +266,10 @@ async def albumizeImage(image_caption: str):
     )
 
     output_text = response.output_text
-    resp_json = json.loads(output_text)
+    resp = {
+        "tags": output_text
+    }
 
-    logger.info(f"Output JSON for album tags: {resp_json}")
+    logger.info(f"Output JSON for album tags: {resp}")
 
-    return resp_json
+    return resp
