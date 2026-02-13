@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search as SearchIcon, Loader, Image, AlertCircle } from 'lucide-react';
-import { queryPhotos } from '../services/api';
+import { queryPhotos, getPhoto } from '../services/api';
 import './Search.css';
 
 const Search = () => {
@@ -22,19 +22,31 @@ const Search = () => {
       // API search
       const apiResults = await queryPhotos(query.trim());
       
-      // Map API results to display format
+      // Map API results to display format and fetch photo details
       let matchedPhotos = [];
       if (Array.isArray(apiResults) && apiResults.length > 0) {
-        matchedPhotos = apiResults.map(result => {
+        const photoPromises = apiResults.map(async (result) => {
           const id = result.id || result;
-          return {
-            id,
-            score: result.score,
-            name: `Photo ${id}`,
-            caption: '',
-            preview: null
-          };
+          try {
+            const photoDetails = await getPhoto(id);
+            return {
+              id,
+              score: result.score,
+              name: photoDetails.name || `Photo ${id}`,
+              caption: photoDetails.caption || '',
+              preview: photoDetails.url || null
+            };
+          } catch {
+            return {
+              id,
+              score: result.score,
+              name: `Photo ${id}`,
+              caption: '',
+              preview: null
+            };
+          }
         });
+        matchedPhotos = await Promise.all(photoPromises);
       }
       
       setResults(matchedPhotos);

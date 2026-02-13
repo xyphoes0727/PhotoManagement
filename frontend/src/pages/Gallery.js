@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Grid, 
   List, 
@@ -9,8 +9,10 @@ import {
   Heart,
   Download,
   Trash2,
-  X
+  X,
+  Loader
 } from 'lucide-react';
+import { getPhotos, deletePhoto } from '../services/api';
 import './Gallery.css';
 
 const Gallery = () => {
@@ -18,13 +20,42 @@ const Gallery = () => {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [filter, setFilter] = useState('all');
   const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Derive categories from photos
-  const categories = ['all', ...new Set(photos.map(p => p.category || 'uncategorized').filter(Boolean))];
+  useEffect(() => {
+    fetchPhotos();
+  }, []);
 
+  const fetchPhotos = async () => {
+    try {
+      setLoading(true);
+      const data = await getPhotos();
+      const formattedPhotos = (data.photos || []).map(photo => ({
+        id: photo.id,
+        name: photo.name,
+        caption: photo.caption,
+        albumId: photo.albumId || 0,
+        faces: photo.faceCount || 0,
+        uploadedAt: photo.uploadedAt,
+        preview: photo.url,
+        url: photo.url
+      }));
+      setPhotos(formattedPhotos);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter photos - 'all' shows everything, otherwise filter by albumId
   const filteredPhotos = filter === 'all' 
     ? photos 
-    : photos.filter(p => (p.category || 'uncategorized') === filter);
+    : photos.filter(p => String(p.albumId) === filter);
+
+  // Get unique album IDs for filtering
+  const albumIds = ['all', ...new Set(photos.map(p => String(p.albumId)).filter(id => id !== '0'))];
 
   const openLightbox = (photo) => {
     setSelectedPhoto(photo);
@@ -34,9 +65,14 @@ const Gallery = () => {
     setSelectedPhoto(null);
   };
 
-  const handleDeletePhoto = (photoId) => {
-    setPhotos(prev => prev.filter(p => p.id !== photoId));
-    setSelectedPhoto(null);
+  const handleDeletePhoto = async (photoId) => {
+    try {
+      await deletePhoto(photoId);
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+      setSelectedPhoto(null);
+    } catch (err) {
+      console.error('Failed to delete photo:', err);
+    }
   };
 
   const formatDate = (isoString) => {
@@ -44,19 +80,41 @@ const Gallery = () => {
     return new Date(isoString).toLocaleDateString();
   };
 
+  if (loading) {
+    return (
+      <div className="gallery-page">
+        <div className="loading-state">
+          <Loader size={48} className="spin" />
+          <p>Loading photos...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="gallery-page">
+        <div className="error-state">
+          <p>Error: {error}</p>
+          <button onClick={fetchPhotos}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="gallery-page">
       <div className="gallery-toolbar">
         <div className="toolbar-left">
           <div className="filter-group">
             <Filter size={18} />
-            {categories.map(cat => (
+            {albumIds.map(albumId => (
               <button
-                key={cat}
-                className={`filter-btn ${filter === cat ? 'active' : ''}`}
-                onClick={() => setFilter(cat)}
+                key={albumId}
+                className={`filter-btn ${filter === albumId ? 'active' : ''}`}
+                onClick={() => setFilter(albumId)}
               >
-                {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                {albumId === 'all' ? 'All' : `Album ${albumId}`}
               </button>
             ))}
           </div>
@@ -108,7 +166,7 @@ const Gallery = () => {
                 <div className="photo-meta">
                   <span>{formatDate(photo.uploadedAt)}</span>
                   {photo.faces > 0 && <span>👤 {photo.faces}</span>}
-                  <span className="photo-category">{photo.category || 'uncategorized'}</span>
+                  {photo.albumId > 0 && <span className="photo-album">Album {photo.albumId}</span>}
                 </div>
               </div>
             )}
@@ -152,7 +210,7 @@ const Gallery = () => {
               
               <div className="lightbox-meta">
                 <span>📅 {formatDate(selectedPhoto.uploadedAt)}</span>
-                <span>📁 {selectedPhoto.category || 'uncategorized'}</span>
+                {selectedPhoto.albumId > 0 && <span>📁 Album {selectedPhoto.albumId}</span>}
                 {selectedPhoto.faces > 0 && <span>👤 {selectedPhoto.faces} faces</span>}
               </div>
               

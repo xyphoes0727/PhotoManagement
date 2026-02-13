@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Upload, 
@@ -8,17 +8,38 @@ import {
   TrendingUp,
   FolderOpen
 } from 'lucide-react';
+import { getStats } from '../services/api';
 import './Dashboard.css';
 
 const Dashboard = () => {
-  const stats = { totalPhotos: 0, totalAlbums: 0, totalFaces: 0, thisMonth: 0 };
+  const [stats, setStats] = useState({ totalPhotos: 0, totalAlbums: 0, totalFaces: 0, photosThisMonth: 0 });
+  const [loading, setLoading] = useState(true);
   const recentActivity = [];
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const data = await getStats();
+        setStats({
+          totalPhotos: data.totalPhotos || 0,
+          totalAlbums: data.totalAlbums || 0,
+          totalFaces: data.totalFaces || 0,
+          thisMonth: data.photosThisMonth || 0
+        });
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, []);
 
   const statCards = [
     { icon: Image, label: 'Total Photos', value: stats.totalPhotos.toString(), trend: stats.thisMonth > 0 ? `+${stats.thisMonth}` : '0' },
     { icon: FolderOpen, label: 'Albums', value: stats.totalAlbums.toString(), trend: '' },
     { icon: Users, label: 'Faces Detected', value: stats.totalFaces.toString(), trend: '' },
-    { icon: TrendingUp, label: 'This Month', value: stats.thisMonth.toString(), trend: '' },
+    { icon: TrendingUp, label: 'This Month', value: (stats.thisMonth || 0).toString(), trend: '' },
   ];
 
   const quickActions = [

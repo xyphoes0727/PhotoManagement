@@ -118,4 +118,94 @@ export const getAlbumization = async (imageCaption) => {
   }
 };
 
+// Get all photos
+export const getPhotos = async () => {
+  try {
+    const response = await api.get('/api/photos/');
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to fetch photos');
+  }
+};
+
+// Get a single photo by ID
+export const getPhoto = async (photoId) => {
+  try {
+    const response = await api.get(`/api/photos/${photoId}/`);
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to fetch photo');
+  }
+};
+
+// Delete a photo
+export const deletePhoto = async (photoId) => {
+  try {
+    const response = await api.delete(`/api/photos/${photoId}/`);
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to delete photo');
+  }
+};
+
+// Get all albums
+export const getAlbums = async () => {
+  try {
+    const response = await api.get('/api/albums/');
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to fetch albums');
+  }
+};
+
+// Get a single album by ID
+export const getAlbum = async (albumId) => {
+  try {
+    const response = await api.get(`/api/albums/${albumId}/`);
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to fetch album');
+  }
+};
+
+// Create a new album
+export const createAlbum = async (name, description = '') => {
+  try {
+    const response = await api.post('/api/albums/', { name, description });
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to create album');
+  }
+};
+
+// Delete an album
+export const deleteAlbum = async (albumId) => {
+  try {
+    const response = await api.delete(`/api/albums/${albumId}/`);
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to delete album');
+  }
+};
+
+// Add photos to an album
+export const addPhotosToAlbum = async (albumId, photoIds) => {
+  try {
+    const response = await api.post(`/api/albums/${albumId}/photos/`, { photoIds });
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to add photos to album');
+  }
+};
+
+// Get stats
+export const getStats = async () => {
+  try {
+    const response = await api.get('/api/stats/');
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to fetch stats');
+  }
+};
+
 export default api;

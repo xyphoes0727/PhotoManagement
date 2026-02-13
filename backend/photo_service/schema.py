@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, List, Optional, Dict
 from typing import Any
 from pydantic import BaseModel, ValidationError
@@ -99,3 +100,29 @@ class AlbumizationResponse(BaseModel):
             return cls(**data)
         except ValidationError as e:
             return cls(error=f"invalid albumization response: {e}")
+
+
+@dataclass
+class CreateAlbumRequest:
+    name: str
+    description: Optional[str] = ""
+
+    @classmethod
+    def from_django_json(cls, request):
+        data = json.loads(request.body)
+        return cls(
+            name=data.get('name', ''),
+            description=data.get('description', '')
+        )
+
+
+@dataclass
+class AddPhotosRequest:
+    photoIds: List[str]
+
+    @classmethod
+    def from_django_json(cls, request):
+        data = json.loads(request.body)
+        return cls(
+            photoIds=data.get('photoIds', [])
+        )

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FolderOpen, 
   Plus, 
@@ -6,8 +6,10 @@ import {
   Image,
   Edit2,
   Trash2,
-  X
+  X,
+  Loader
 } from 'lucide-react';
+import { getAlbums, createAlbum, deleteAlbum, getPhotos } from '../services/api';
 import './Albums.css';
 
 const Albums = () => {
@@ -16,6 +18,42 @@ const Albums = () => {
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [albums, setAlbums] = useState([]);
   const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [albumsData, photosData] = await Promise.all([
+        getAlbums(),
+        getPhotos()
+      ]);
+      
+      const formattedAlbums = (albumsData.albums || []).map(album => ({
+        id: album.id,
+        name: album.name,
+        photoCount: album.photoCount || album.photoIds?.length || 0,
+        photoIds: album.photoIds || [],
+        cover: album.coverPhotoUrl,
+        createdAt: album.createdAt ? new Date(album.createdAt).toISOString().split('T')[0] : null
+      }));
+      setAlbums(formattedAlbums);
+      
+      const formattedPhotos = (photosData.photos || []).map(photo => ({
+        id: photo.id,
+        caption: photo.caption,
+        faces: photo.faceCount || 0
+      }));
+      setPhotos(formattedPhotos);
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Generate suggested albums based on photo captions
   const generateSuggestions = () => {
@@ -50,7 +88,7 @@ const Albums = () => {
 
   const suggestedAlbums = generateSuggestions();
 
-  const handleCreateAlbum = (nameOrEvent) => {
+  const handleCreateAlbum = async (nameOrEvent) => {
     // Handle both direct name string and form submission (event or no arg)
     let albumName;
     if (typeof nameOrEvent === 'string') {
@@ -60,24 +98,59 @@ const Albums = () => {
     }
     
     if (albumName) {
-      const newAlbum = {
-        id: `album_${Date.now()}`,
-        name: albumName,
-        photoCount: 0,
-        photoIds: [],
-        cover: null,
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      setAlbums(prev => [...prev, newAlbum]);
-      setNewAlbumName('');
-      setShowCreateModal(false);
+      try {
+        const newAlbum = await createAlbum(albumName, '');
+        setAlbums(prev => [...prev, {
+          id: newAlbum.id,
+          name: newAlbum.name,
+          photoCount: 0,
+          photoIds: [],
+          cover: null,
+          createdAt: new Date().toISOString().split('T')[0]
+        }]);
+        setNewAlbumName('');
+        setShowCreateModal(false);
+      } catch (error) {
+        console.error('Failed to create album:', error);
+        // Fallback to local creation
+        const newAlbum = {
+          id: `album_${Date.now()}`,
+          name: albumName,
+          photoCount: 0,
+          photoIds: [],
+          cover: null,
+          createdAt: new Date().toISOString().split('T')[0]
+        };
+        setAlbums(prev => [...prev, newAlbum]);
+        setNewAlbumName('');
+        setShowCreateModal(false);
+      }
     }
   };
 
-  const handleDeleteAlbum = (id) => {
-    setAlbums(prev => prev.filter(a => a.id !== id));
-    setSelectedAlbum(null);
+  const handleDeleteAlbum = async (id) => {
+    try {
+      await deleteAlbum(id);
+      setAlbums(prev => prev.filter(a => a.id !== id));
+      setSelectedAlbum(null);
+    } catch (error) {
+      console.error('Failed to delete album:', error);
+      // Still remove locally on error
+      setAlbums(prev => prev.filter(a => a.id !== id));
+      setSelectedAlbum(null);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="albums-page">
+        <div className="loading-state">
+          <Loader size={48} className="spin" />
+          <p>Loading albums...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="albums-page">

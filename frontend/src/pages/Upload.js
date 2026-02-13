@@ -182,6 +182,11 @@ const Upload = () => {
                     <span className="faces">
                       👤 {fileObj.result.n_faces || 0} face(s) detected
                     </span>
+                    {fileObj.result.album_tags && fileObj.result.album_tags.length > 0 && (
+                      <span className="album-tags">
+                        📁 Tags: {fileObj.result.album_tags.join(', ')}
+                      </span>
+                    )}
                   </div>
                 )}
                 {fileObj.status === 'error' && (
