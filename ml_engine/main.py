@@ -1,0 +1,275 @@
+import os
+from openai import OpenAI
+import base64
+import torch
+from PIL import Image
+from fastapi import FastAPI
+import json
+import io
+from pydantic import BaseModel
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import logging
+from logging import getLogger
+from fastapi.middleware.cors import CORSMiddleware
+from sentence_transformers import SentenceTransformer
+from deepface import DeepFace
+import constants
+from dotenv import load_dotenv
+from pathlib import Path
+
+MID = constants.MID
+IMAGE_TOKEN_INDEX = constants.IMAGE_TOKEN_INDEX  # what the model code looks for
+APPLE_REV = constants.APPLE_REV
+
+NOMIC_REV = constants.NOMIC_REV
+NOMIC_MODEL_NAME = constants.NOMIC_MODEL_NAME
+
+OPENAI_MODEL = constants.OPENAI_MODEL
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s | %(levelname)-8s | "
+                           "%(module)s:%(funcName)s:%(lineno)d - %(message)s")
+logger = getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent  # This is ml_engine/
+yes = load_dotenv(f"{BASE_DIR}/.env")
+if (not yes):
+    logger.warning(f"Failed to load .env in settings.py. BASE_DIR: {BASE_DIR}")
+
+try:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "openai_api_key")
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+except Exception as e:
+    logger.error(f"Failed to load OpenAI Client:: {e}")
+
+
+def getTokenizer():
+    tok = AutoTokenizer.from_pretrained(
+        MID, trust_remote_code=True, revision=APPLE_REV)
+    messages = [
+        {
+            "role": "user",
+            "content": "<image> You must output exactly one single-line sentence describing the image.The output must contain no line breaks, no labels, no prefixes, no quotes, no markdown, and no extra words.Do not include words like Answer, Caption, Description, or Explanation.Do not repeat the sentence.Use simple English and describe only visible people, objects, and actions.End the sentence with a period.Output only the sentence."
+
+        }
+    ]
+
+    rendered = tok.apply_chat_template(
+        messages, add_generation_prompt=True, tokenize=False
+    )
+    pre, post = rendered.split("<image>", 1)
+
+    # Tokenize the text *around* the image token (no extra specials!)
+    pre_ids = tok(pre,  return_tensors="pt",
+                  add_special_tokens=False).input_ids
+    post_ids = tok(post, return_tensors="pt",
+                   add_special_tokens=False).input_ids
+
+    # Splice in the IMAGE token id (-200) at the placeholder position
+    img_tok = torch.tensor([[IMAGE_TOKEN_INDEX]], dtype=pre_ids.dtype)
+
+    return {
+        "tok": tok,
+        "pre_ids": pre_ids,
+        "post_ids": post_ids,
+        "img_tok": img_tok
+    }
+
+
+def getVLM(tok_attrs: dict):
+    pre_ids = tok_attrs["pre_ids"]
+    post_ids = tok_attrs["post_ids"]
+    img_tok = tok_attrs["img_tok"]
+
+    # Load
+    model = AutoModelForCausalLM.from_pretrained(
+        MID,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto",
+        trust_remote_code=True,
+        revision=APPLE_REV
+    )
+
+    input_ids = torch.cat([pre_ids, img_tok, post_ids], dim=1).to(model.device)
+    attention_mask = torch.ones_like(input_ids, device=model.device)
+
+    return {
+        "model": model,
+        "input_ids": input_ids,
+        "attention_mask": attention_mask
+    }
+
+
+tok_attrs = {}
+try:
+    tok_attrs = getTokenizer()
+except Exception as e:
+    logger.error(f"Error while getTokenizer: {e}")
+
+vlm_attrs = {}
+try:
+    vlm_attrs = getVLM(tok_attrs)
+except Exception as e:
+    logger.error(f"Error while getVLM: {e}")
+
+
+def inferVLM(tok_attrs: dict, vlm_attrs: dict, image: Image.Image) -> str:
+    tok = tok_attrs["tok"]
+
+    model = vlm_attrs["model"]
+    input_ids = vlm_attrs["input_ids"]
+    attention_mask = vlm_attrs["attention_mask"]
+
+    # Process image
+    px = model.get_vision_tower().image_processor(
+        images=image, return_tensors="pt")["pixel_values"]
+    px = px.to(model.device, dtype=model.dtype)
+
+    # Generate
+    with torch.no_grad():
+        out = model.generate(
+            inputs=input_ids,
+            attention_mask=attention_mask,
+            images=px,
+            max_new_tokens=128,
+        )
+    description = tok.decode(out[0], skip_special_tokens=True)
+    logger.info(f"description by VLM: {description}")
+
+    return description
+
+
+def getEmbedder():
+    model = SentenceTransformer(
+        NOMIC_MODEL_NAME,
+        trust_remote_code=True,
+        revision=NOMIC_REV)
+
+    return {
+        "model": model
+    }
+
+
+embed_attrs = {}
+try:
+    embed_attrs = getEmbedder()
+except Exception as e:
+    logger.error(f"Error while getEmbedder: {e}")
+
+app = FastAPI()
+app.add_middleware(CORSMiddleware,
+                   allow_origins=["*"],
+                   allow_credentials=True,
+                   allow_methods=["*"],
+                   allow_headers=["*"])
+
+
+@app.post("/ml/text-embed/{text}")
+def textEmbedder(text: str):
+    logger.info(f"Starting embedding for text: {text}")
+    logger.debug(f"embed_attrs: {embed_attrs}")
+    model: SentenceTransformer = embed_attrs["model"]
+
+    sentences = [f'clustering: {text}']
+    embeddings = model.encode(sentences)
+
+    logger.debug(f"Shape of embeddings: {embeddings.shape}")
+    text_embed = embeddings[0].tolist()
+
+    return {
+        "text": text,
+        "embed": text_embed
+    }
+
+
+class ImageData(BaseModel):
+    image_id: str
+    image: str
+
+
+@app.post("/ml/image-caption/")
+async def imageCaptioner(image_data: ImageData):
+    logger.info(f"image_id: {image_data.image_id}")
+    logger.debug(f"Type of image: {type(image_data.image)}")
+
+    file_b64 = image_data.image
+    imgBytes = base64.b64decode(s=file_b64)
+
+    logger.debug(f"Image bytes: {imgBytes[:10]}")
+    img = Image.open(io.BytesIO(imgBytes)).convert("RGB")
+
+    caption = ""
+    try:
+        caption = inferVLM(tok_attrs, vlm_attrs, img)
+    except Exception as e:
+        logger.error(f"Failed while captioning: {e}")
+
+    return {
+        "image_id": image_data.image_id,
+        "caption": caption
+    }
+
+
+@app.post("/ml/face-detection/")
+async def faceDetection(image_data: ImageData):
+    file_b64 = image_data.image
+    imgBytes = base64.b64decode(s=file_b64)
+
+    logger.debug(f"Image bytes: {imgBytes[:10]}")
+
+    # Embed is 512 dims
+    face_embeddings = []
+    try:
+        embeds = DeepFace.represent(io.BytesIO(
+            imgBytes), model_name="Facenet512", enforce_detection=True)
+        logger.debug(f"Keys of one embeds object: {embeds[0].keys()}")
+        for emb in embeds:
+            embed = emb["embedding"]  # type: ignore
+            face_embeddings.append(embed)
+    except ValueError:
+        logger.info(f"No face detected in image.")
+
+    return {
+        "image_id": image_data.image_id,
+        "face_embeds": face_embeddings
+    }
+
+
+@app.post("/ml/albumization/{image_caption}")
+async def albumizeImage(image_caption: str):
+    logger.info(f"image_caption received: {image_caption}")
+
+    response = openai_client.responses.create(
+        model=OPENAI_MODEL,
+        input=f"""
+            You are given a short image caption.
+
+            Task:
+            - Generate high-level album tags for photo organization using ONLY the information in the caption.
+            - Tags should be generic categories useful for grouping similar photos.
+            - Do NOT add information not present in the caption.
+            - Do NOT infer intent, emotions, meaning, or personal attributes.
+            - Use short, lowercase, noun-based tags.
+
+            Output rules:
+            - Return ONLY valid JSON.
+            - No explanations, no markdown, no extra text.
+
+            Output JSON schema:
+            {{
+            "tags": ["tag1", "tag2", "tag3"]
+            }}
+
+            Image Caption:
+            "{image_caption}"
+            """
+    )
+
+    output_text = response.output_text
+    resp = {
+        "tags": output_text
+    }
+
+    logger.info(f"Output JSON for album tags: {resp}")
+
+    return resp
