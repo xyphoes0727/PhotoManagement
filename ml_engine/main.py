@@ -1,5 +1,4 @@
 import os
-from openai import OpenAI
 import base64
 import torch
 from PIL import Image
@@ -16,6 +15,7 @@ from deepface import DeepFace
 import constants
 from dotenv import load_dotenv
 from pathlib import Path
+from importlib import import_module
 
 MID = constants.MID
 IMAGE_TOKEN_INDEX = constants.IMAGE_TOKEN_INDEX  # what the model code looks for
@@ -24,7 +24,7 @@ APPLE_REV = constants.APPLE_REV
 NOMIC_REV = constants.NOMIC_REV
 NOMIC_MODEL_NAME = constants.NOMIC_MODEL_NAME
 
-OPENAI_MODEL = constants.OPENAI_MODEL
+GEMINI_MODEL_NAME = constants.GEMINI_MODEL_NAME
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s | %(levelname)-8s | "
@@ -32,15 +32,20 @@ logging.basicConfig(level=logging.INFO,
 logger = getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent  # This is ml_engine/
+
 yes = load_dotenv(f"{BASE_DIR}/.env")
 if (not yes):
-    logger.warning(f"Failed to load .env in settings.py. BASE_DIR: {BASE_DIR}")
+    logger.warning(f"Failed to load .env in ml_engine main.py. BASE_DIR: {BASE_DIR}")
 
 try:
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "openai_api_key")
-    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "gemini_api_key")
+    gemini_sdk = import_module("google.genai")
+    gemini_types = import_module("google.genai.types")
+    gemini_client = gemini_sdk.Client(api_key=GEMINI_API_KEY)
 except Exception as e:
-    logger.error(f"Failed to load OpenAI Client:: {e}")
+    logger.error(f"Failed to load Gemini Client:: {e}")
+    gemini_client = None
+    gemini_types = None
 
 
 def getTokenizer():
@@ -222,7 +227,6 @@ async def faceDetection(image_data: ImageData):
     try:
         embeds = DeepFace.represent(io.BytesIO(
             imgBytes), model_name="Facenet512", enforce_detection=True)
-        logger.debug(f"Keys of one embeds object: {embeds[0].keys()}")
         for emb in embeds:
             embed = emb["embedding"]  # type: ignore
             face_embeddings.append(embed)
@@ -239,9 +243,11 @@ async def faceDetection(image_data: ImageData):
 async def albumizeImage(image_caption: str):
     logger.info(f"image_caption received: {image_caption}")
 
-    response = openai_client.responses.create(
-        model=OPENAI_MODEL,
-        input=f"""
+    if gemini_client is None or gemini_types is None:
+        logger.error("Gemini client is unavailable.")
+        return {"tags": []}
+
+    prompt = f"""
             You are given a short image caption.
 
             Task:
@@ -257,18 +263,28 @@ async def albumizeImage(image_caption: str):
 
             Output JSON schema:
             {{
-            "tags": ["tag1", "tag2", "tag3"]
+            "tags": ["tag1", "tag2", "tag3", ...]
             }}
 
             Image Caption:
             "{image_caption}"
             """
+
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL_NAME,
+        contents=prompt,
+        config=gemini_types.GenerateContentConfig(
+            temperature=0.2,
+            response_mime_type="application/json",
+        ),
     )
 
-    output_text = response.output_text
-    resp = {
-        "tags": output_text
-    }
+    output_text = response.text or "{}"
+    try:
+        resp = json.loads(output_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Gemini response as JSON: {e}. Raw response: {output_text}")
+        resp = {"tags": []}
 
     logger.info(f"Output JSON for album tags: {resp}")
 

@@ -126,6 +126,27 @@ Backend routes are mounted under `/api/`.
 - `GET /api/albums/<album_id>/photos/` - list photos in an album
 - `GET /api/stats/` - fetch dashboard statistics
 
+## Benchmark Suite
+
+The repository includes a standalone benchmark runner in `backend/benchmarks/` for measuring indexing throughput, retrieval latency, and retrieval quality.
+
+Example usage from the `backend/` directory:
+
+```bash
+python benchmark.py \
+	--dataset-dir /path/to/images \
+	--queries-file benchmarks/examples/benchmark_queries.example.json \
+	--ground-truth-file benchmarks/examples/benchmark_ground_truth.example.json \
+	--number-of-images 100 \
+	--number-of-queries 10 \
+	--warmup-iterations 2 \
+	--repeated-runs 5 \
+	--output-json benchmark_results.json \
+	--output-csv benchmark_query_timings.csv
+```
+
+The runner writes a JSON summary, a per-query CSV, and reuses a persistent cache in `backend/.benchmark_cache/` so caption and embedding results do not need to be regenerated on every run.
+
 ## Notes
 
 - The upload flow can continue even if S3 or Pinecone operations fail, but the request will still return the processing result when possible.
